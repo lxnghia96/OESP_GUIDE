@@ -30,9 +30,11 @@ current_offset = 0. # Current offset in DAC counts
 potential_offset = 0. # Potential offset in DAC counts
 potential = 0. # Measured potential in V
 current = 0. # Measured current in mA
+dac_voltage = 0. #Measured dac voltage
 last_potential_values = collections.deque(maxlen=200)
 last_current_values = collections.deque(maxlen=200)
 raw_potential = 0 # Measured potential in ADC counts
+last_dac_voltage_values = collections.deque(maxlen=200)
 raw_current = 0 # Measured current in ADC counts
 last_raw_potential_values = collections.deque(maxlen=200)
 last_raw_current_values = collections.deque(maxlen=200)
@@ -545,6 +547,8 @@ def set_output(value_units_index, value):
     """Output data to the DAC; units can be either V (index 0), mA (index 1), or raw counts (index 2)."""
     if value_units_index == 0:
         send_command(b'DACSET '+decimal_to_dac_bytes(value/13.4*2.**19+int(round(potential_offset/4.))), b'OK')
+        dac_voltage = value
+        print(f"dac_voltage = {dac_voltage} \r\n")
     elif value_units_index == 1:
         if currentrange == 0:
             send_command(b'DACSET '+decimal_to_dac_bytes(value/(250./shunt_calibration[currentrange])*2.**19+int(round(current_offset/4.))), b'OK')
@@ -600,14 +604,9 @@ def read_potential_current():
     dev.write(0x01,b'ADCREAD') # 0x01 = write address of EP1
     response = bytes(dev.read(0x81,64)) # 0x81 = read address of EP1
     if response != b'WAIT': # 'WAIT' is received if a conversion has not yet finished
-        print(f"response = {response}")
         raw_potential = twocomplement_to_decimal(response[0], response[1], response[2])
-        print(f"raw_potential = {raw_potential}")
         raw_current = twocomplement_to_decimal(response[3], response[4], response[5])
-        print(f"raw_current = {raw_current}")
-        print(f"potential_offset = {potential_offset}")
         potential = (raw_potential-potential_offset)/2097152.*13.4 # Calculate potential in V, compensating for offset
-        print(f"potential = {potential}")
         if currentrange == 0:# Calculate current in mA, taking current range into account and compensating for offset
             current = (raw_current-current_offset)/2097152.*250./(shunt_calibration[currentrange])
         elif currentrange == 1:
@@ -627,7 +626,7 @@ def read_potential_current():
 
 def idle_init():
     """Perform some necessary initialization before entering the Idle state."""
-    global potential_plot_curve, current_plot_curve, legend, state
+    global potential_plot_curve, current_plot_curve, legend, state, dac_voltage_plot_curve
     plot_frame.clear()
     try:
         legend.scene().removeItem(legend) # Remove any previous legends
@@ -642,17 +641,25 @@ def idle_init():
     plot_frame.setXRange(0,200,update=True)
     potential_plot_curve = plot_frame.plot(pen='g', name='Potential (V)')
     current_plot_curve = plot_frame.plot(pen='r', name='Current (mA)')
+    dac_voltage_plot_curve = plot_frame.plot(pen='b', name=' DAC Voltage (V)')
+    
+    
+
     state = States.Idle # Proceed to the Idle state
 
 def update_live_graph():
     """Add newly measured potential and current values to their respective buffers and update the plot curves."""
     last_potential_values.append(potential)
     last_current_values.append(current)
+    # last_dac_voltage_values.append(str(dac_voltage))
+    print(f"last_dac_voltage_values: {last_dac_voltage_values}")
     last_raw_potential_values.append(raw_potential)
     last_raw_current_values.append(raw_current)
     xvalues = range(last_potential_values.maxlen-len(last_potential_values),last_potential_values.maxlen)
     potential_plot_curve.setData(xvalues, list(last_potential_values))
-    current_plot_curve.setData(xvalues, list(last_current_values))
+    # current_plot_curve.setData(xvalues, list(last_current_values))
+    # dac_voltage_plot_curve.setData(xvalues, list(last_dac_voltage_values))
+
 
 def choose_file(file_entry_field, questionstring):
     """Open a file dialog and write the path of the selected file to a given entry field."""
